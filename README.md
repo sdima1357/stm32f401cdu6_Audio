@@ -1,7 +1,7 @@
 # stm32f401ccAudioNative
-stm32 black pill usb sound card
+stm32 green pill usb sound card
 last one: 
-
+https://www.youtube.com/watch?v=KB1A08Pj6nc
 
 
 https://www.youtube.com/watch?v=0MmWp3HdV2A
@@ -45,6 +45,10 @@ optional external i2s module
 -- up pwm freq to 384KHz - significant sound quality improvment 
 
 -- add tty output
+
+30.04.2022
+
+-- green pill version
 
 
 ![image2](https://github.com/sdima1357/stm32f401ccAudioNative/blob/main/images/schematic1.png?raw=true)
