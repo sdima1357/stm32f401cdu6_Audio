@@ -48,7 +48,8 @@ optional external i2s module
 
 30.04.2022
 
--- green pill version
+-- cheeper!!! green pill (stm32f401cdu6)version from here (for example US $2.63 ) https://www.aliexpress.com/item/4001062944589.html
+
 
 
 
