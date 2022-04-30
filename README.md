@@ -51,6 +51,11 @@ optional external i2s module
 -- green pill version
 
 
+
 ![image2](https://github.com/sdima1357/stm32f401ccAudioNative/blob/main/images/schematic1.png?raw=true)
+
+
+![image3](https://github.com/sdima1357/stm32f401ccAudioNative/blob/main/images/P1010093.JPG?raw=true)
+
 
 
