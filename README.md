@@ -50,7 +50,9 @@ optional external i2s module
 
 -- cheeper!!! green pill (stm32f401cdu6)version. Can buy here ( US $2.63 ) https://www.aliexpress.com/item/4001062944589.html
 
+02.05.2022
 
+-- detected problems with new STM32Cube_FW_F4_V1.27.0 audio driver. please build with <=STM32Cube_FW_F4_V1.26.0 . WIP
 
 
 ![image2](https://github.com/sdima1357/stm32f401ccAudioNative/blob/main/images/schematic1.png?raw=true)
