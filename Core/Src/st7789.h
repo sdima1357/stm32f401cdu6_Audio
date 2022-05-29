@@ -129,6 +129,7 @@ void LCD_setRotation(uint8_t rotation);
 void LCD_sendLineRect(uint16_t y1,uint8_t * data);
 void LCD_fillRect(uint16_t x1, uint16_t y1, uint16_t w, uint16_t h, uint16_t color);
 void LCD_fillRect(uint16_t x1, uint16_t y1, uint16_t w, uint16_t h, uint16_t color);
+void LCD_fillRectDataTable(uint16_t x1, uint16_t y1, uint16_t w, uint16_t h,uint8_t*,uint8_t*);
 void LCD_Draw_Char(char Character, int16_t X, int16_t Y, uint16_t Colour, uint16_t Size, uint16_t Background_Colour);
 void LCD_Draw_Text(const char* Text, int16_t X, int16_t Y, uint16_t Colour, uint16_t Size, uint16_t Background_Colour);
 void LCD_Draw_Text2(const char* Text, int16_t X, int16_t Y, uint16_t Colour, uint16_t SizeX, uint16_t SizeY,uint16_t Background_Colour);
@@ -137,7 +138,7 @@ void LCD_Draw_Line(int x0, int y0, int x1, int y1,uint16_t color) ;
 void LCD_reset();
 void setLCD(int num);
 uint16_t color_convertRGB_to16(uint8_t * adress);
-uint16_t color_convertRGB_to16d(uint8_t R,uint8_t G,uint8_t B);
+uint16_t color_convertRGB_to16d(uint16_t R,uint16_t G,uint16_t B);
 void LCD_Draw_LinePNX(int x0, int y0, int x1, int y1,int Width,int N,uint8_t* color);
 
 

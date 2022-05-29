@@ -129,10 +129,10 @@ void SPIx_WriteF(uint8_t  Value)
 
 void spiwrite(uint8_t c)
 {
-	//while(SPIH.State!=HAL_SPI_STATE_READY){};
+	while(SPIH.State!=HAL_SPI_STATE_READY){};
 	uint8_t dummy ;
 	HAL_SPI_TransmitReceive(&SPIH, (uint8_t*) &c, &dummy,1 ,SpixTimeout);
-	//while(SPIH.State!=HAL_SPI_STATE_READY){};
+	while(SPIH.State!=HAL_SPI_STATE_READY){};
 }
 
 void    Delay(int num)
@@ -179,9 +179,10 @@ uint16_t color_convertRGB_to16(uint8_t * adress)
 {
 	return ((adress[0]>>3)<<11)|((adress[1]>>2)<<5)|(adress[2]>>3);
 }
-uint16_t color_convertRGB_to16d(uint8_t R,uint8_t G,uint8_t B)
+uint16_t color_convertRGB_to16d(uint16_t Rc,uint16_t Gc,uint16_t Bc)
 {
-	return ((R>>3)<<11)|((G>>2)<<5)|(B>>3);
+
+	return ((Rc&0b11111000)<<8u)|((Gc&0b11111100)<<3u)|((Bc&0b11111000)>>3u);
 }
 
 static uint16_t screen_width  = ILI9341_LCD_PIXEL_WIDTH;
@@ -373,6 +374,7 @@ void setAddrWindowA(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
   uint16_t y_start = y0 + _ystart, y_end = y1 + _ystart;
   uint8_t b4[4];
 
+  LCD_DC_0;
   writecommand(ST7789_CASET); // Column addr set
   b4[0] = x_start >> 8;
   b4[1] = x_start & 0xff;
@@ -430,6 +432,60 @@ void LCD_fillRectData(uint16_t x1, uint16_t y1, uint16_t w, uint16_t h, uint8_t*
 		SPIx_WriteF(color[k*2+0]);
 	}
 }
+//extern uint8_t ftable[240*240];
+//extern uint8_t ctable[256*2];
+
+uint8_t dline[0x200];
+
+void LCD_fillRectDataTable(uint16_t x1, uint16_t y1, uint16_t w, uint16_t h,uint8_t* ftable,uint8_t* ctable)
+{
+	//uint8_t  Data0 = (GREEN>>8u)&0xff;
+	//uint8_t  Data1 = (GREEN)&0xff;
+	//setAddrWindow(x1, y1,x1+w-1,y1+h-1);
+	uint8_t dummy=0xff;
+	for(int y=y1;y<y1+h;y++)
+	{
+/*
+		for(int x=x1;x<x1+w;x++)
+		{
+			int crd = ftable[y*240+x];
+			dline[x*2+0] = ctable[crd*2+0];
+			dline[x*2+1] = ctable[crd*2+1];
+		}
+*/
+
+		setAddrWindow(x1, y,x1+w-1,y);
+		for(int x=x1;x<x1+w;x++)
+		{
+			int crd = ftable[y*240+x];
+			uint8_t a = ctable[crd*2+0];
+			uint8_t b = ctable[crd*2+1];
+			//dline[x*2+0] = ctable[crd*2+0];
+			//dline[x*2+1] = ctable[crd*2+1];
+			SPIx_WriteF(a);
+			SPIx_WriteF(b);
+		}
+		//SPIx_WriteF(0xff);
+		//SPIx_WriteF(0xff);
+
+		HAL_SPI_Transmit(&SPIH, (uint8_t*) &dummy,1,SpixTimeout);
+#if 0
+		for(int x=x1;x<x1+w;x++)
+		{
+			//setAddrWindow(x, y,x,y);
+			int crd = ftable[y*240+x];
+
+			//crd = 128;
+			//writedata(ctable[crd*2+0]);
+			//writedata(ctable[crd*2+1]);
+			SPIx_WriteF(ctable[crd*2+0]);
+			SPIx_WriteF(ctable[crd*2+1]);
+		}
+#endif
+		//READ_WSPI(dummy);
+	}
+}
+
 
 //uint8_t block_send[128];
 

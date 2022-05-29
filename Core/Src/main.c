@@ -42,6 +42,8 @@ unsigned char *getImageData();
 //**********************start user define************!!!!!
 // cpu clock 84 for stm32f401
 #define SYS_CLK_MHZ 84
+
+//#define EYE
 // use internal timers for sound out
 #define   USE_PWM
 //#define USE_I2S
@@ -56,7 +58,7 @@ unsigned char *getImageData();
 
 // integration order 0 , 1 or 2
 //#define ORDER 1
-#define ORDER 1
+#define ORDER 2
 
 
 // if disabled - direct output (order 0)
@@ -70,7 +72,7 @@ unsigned char *getImageData();
 
 #ifdef  USE_PWM
 #if     (ORDER!=0)
-#define FREQ  (48000*6)
+#define FREQ  (48000*5)
 #define MAX_VOL  (SYS_CLK_MHZ*1000000/FREQ)
 #else
 #define FREQ  (44100)
@@ -133,10 +135,10 @@ DMA_HandleTypeDef hdma_spi2_tx;
 SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi3;
 
+TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
-UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -152,7 +154,7 @@ static void MX_SPI1_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_USART2_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -944,38 +946,6 @@ void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 	//HalfTransfer_CallBack_FS();
 }
 
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-	if(huart==&huart2)
-	{
-		HAL_SPI_TxCpltCallbackCnt++;
-		checkTime();
-		if(UsbSamplesAvail > N_SIZE/2)
-		{
-			UsbSamplesAvail -= N_SIZE/2;
-		}
-		else
-		{
-			UsbSamplesAvail = 0;
-		}
-        readDataSerail8(N_SIZE/2);
-	}
-}
-void HAL_UART_TxHalfCpltCallback(UART_HandleTypeDef *huart)
-{
-	if(huart==&huart2)
-	{
-		if(UsbSamplesAvail > N_SIZE/2)
-		{
-			UsbSamplesAvail -= N_SIZE/2;
-		}
-		else
-		{
-			UsbSamplesAvail = 0;
-		}
-        readDataSerail8(0);
-	}
-}
 
 void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
 {
@@ -987,8 +957,8 @@ void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s)
 #define PI 3.14159265358979323846
 #define TAU (2.0 * PI)
 
-
-#define LCD_TYPE 1
+int LCD_TYPE = 1;
+//#define LCD_TYPE 1
 unsigned char* getLCD_Data()
 {
 	return (LCD_TYPE==0)?getImageData():getImageDataDual();
@@ -1035,6 +1005,193 @@ float getAngleAmp()
 		}
 		return 90;
 }
+//#ifdef EYE
+uint8_t ftable[240*240];
+uint8_t ctable[256*2];
+//#endif
+
+int satur(int val,int minv,int maxv)
+{
+	return (val<minv)?minv:((val>maxv)?maxv:val);
+}
+struct rgb
+{
+	int R;
+	int G;
+	int B;
+};
+/**
+ * Converts an HSV color value to RGB. Conversion formula
+ * adapted from http://en.wikipedia.org/wiki/HSV_color_space.
+ * Assumes h, s, and v are contained in the set [0, 1] and
+ * returns r, g, and b in the set [0, 255].
+ *
+ * @param   Number  h       The hue
+ * @param   Number  s       The saturation
+ * @param   Number  v       The value
+ * @return  Array           The RGB representation
+ */
+int REF_COLOR =  120;
+struct rgb hsv2rgb(int H,float S,float V)
+{
+	struct rgb dt;
+
+	float h = H/360.0f;
+	float s = S*0.01f;
+	float v = V*0.01f;
+    float r,g,b;
+    int i = floorf(h * 6.0f);
+    float f = h * 6.0f - i;
+    float p = v * (1.0f - s);
+    float q = v * (1.0f - f * s);
+    float t = v * (1.0f - (1.0f - f) * s);
+
+    switch(i % 6){
+        case 0: r = v, g = t, b = p; break;
+        case 1: r = q, g = v, b = p; break;
+        case 2: r = p, g = v, b = t; break;
+        case 3: r = p, g = q, b = v; break;
+        case 4: r = t, g = p, b = v; break;
+        case 5: r = v, g = p, b = q; break;
+    }
+    dt.R = r*255;
+    dt.G = g*255;
+    dt.B = b*255;
+    return dt;
+}
+
+#define EOFS  40
+//#define EOFS  0
+//#define REF_COLOR 160
+//#define REF_COLOR 308
+//#define REF_COLOR 150
+//#define REF_COLOR 165
+
+void paintLevels(float level,int full)
+{
+	struct rgb base_color = hsv2rgb(REF_COLOR,95,30);
+	uint16_t   tc = color_convertRGB_to16d(base_color.R,base_color.G,base_color.B);
+#define RAMP 30
+	int lastPosNS = satur(level*210+RAMP/2+1,0,255+RAMP/2);
+	int lastPos = satur(lastPosNS,RAMP+1,255);
+
+	for(int colorv=lastPos;colorv<256;colorv++)
+	{
+		 ctable[colorv*2+0] = (tc>>8u)&0xffu;
+		 ctable[colorv*2+1] = tc&0xffu;
+	}
+	int df =lastPosNS-lastPos;
+    int offset = lastPosNS*4/100;
+	for(int colorv=1;colorv<lastPos-RAMP;colorv++)
+	{
+		struct rgb base_color = hsv2rgb(REF_COLOR,95,90-offset-1-RAMP);
+		uint16_t   tc = color_convertRGB_to16d(base_color.R,base_color.G,base_color.B);
+		 ctable[colorv*2+0] = (tc>>8u)&0xffu;
+		 ctable[colorv*2+1] = tc&0xffu;
+	}
+	for(int colorv=lastPos-RAMP;colorv<lastPos;colorv++)
+	{
+		struct rgb base_color = hsv2rgb(REF_COLOR,95,90-offset-1+colorv-lastPos);
+		uint16_t   tc = color_convertRGB_to16d(base_color.R,base_color.G,base_color.B);
+		 ctable[colorv*2+0] = (tc>>8u)&0xffu;
+		 ctable[colorv*2+1] = tc&0xffu;
+	}
+	//overshoot
+	if(df>0)
+	{
+		for(int colorv=255-df;colorv<256;colorv++)
+		{
+			int t = colorv-(255-df);
+			struct rgb base_color = hsv2rgb(REF_COLOR,95,100-t-offset);
+			uint16_t   tc = color_convertRGB_to16d(base_color.R,base_color.G,base_color.B);
+			ctable[colorv*2+0] = (tc>>8u)&0xffu;
+			ctable[colorv*2+1] = tc&0xffu;
+		}
+	}
+	if(full)
+	{
+		LCD_fillRectDataTable(0, 0, LCD_getWidth(), LCD_getHeight(),ftable,ctable);
+	}
+	else
+	{
+		LCD_fillRectDataTable(EOFS, EOFS, LCD_getWidth()-EOFS*2, LCD_getHeight()-EOFS*2,ftable,ctable);
+	}
+
+}
+void tableSetup()
+{
+	//http://www.radiostation.ru/home/greeneye.html
+
+     vec2f center = {119.5,119.5 };
+     // normalized base vector up
+     vec2f base =   {0 ,1 };
+     for(int y=0;y<240;y++)
+     {
+    	 for(int x=0;x<240;x++)
+    	 {
+    		 float dx = (x - center.x);
+    		 float dy = (y - center.y);
+    		 float norma = sqrtf(dx*dx+dy*dy);
+    		 float cosAngle = base.x*dx+base.y*dy;
+    		 float angle = acosf(cosAngle/norma);
+    		 int pos = satur(256*angle/M_PI,1,254)+1;
+    		 if(norma<(240/2-EOFS)&&norma>30)
+    		 {
+    		   ftable[y*240+x] = pos;
+    		 }
+    		 else
+    		 {
+    			 ftable[y*240+x] = 0;
+    		 }
+    	 }
+     }
+     int Rca;
+     int Bca;
+     int Gca;
+
+
+}
+void tableSetup1()
+{
+
+     //vec2f center = {119.5,119.5 };
+     vec2f center = {119.5,239.5-EOFS };
+     float xf = 1.0/(120);
+     float yf = 1.0/(240-EOFS*2);
+     float cmin = 1000;
+     float cmax = -1000;
+     // normalized base vector up
+     vec2f base =   {0 ,-1 };
+     for(int y=0;y<240;y++)
+     {
+    	 for(int x=0;x<240;x++)
+    	 {
+    		 float dx = (x - center.x);
+    		 float dy = (y - center.y);
+    		 float norma = sqrtf(dx*dx+dy*dy);
+    		 float cosAngle = base.x*dx+base.y*dy;
+    		 float angle = acosf(cosAngle/norma)-0.3f*dx*dx*xf*xf;
+    		 int pos = 230.0f-1.25f*fabsf(1024.0f*angle/M_PI-192.0f);
+    		 if(pos<cmin) cmin = pos;
+    		 if(pos>cmax) cmax = pos;
+    		 pos = satur(pos,1,254)+1;
+    		 if(norma<(240-EOFS*2)&&norma>35&&x>EOFS&&x<240-EOFS&&y>EOFS&&y<240-EOFS)
+    		 {
+    		   ftable[y*240+x] = pos;
+    		 }
+    		 else
+    		 {
+    			 ftable[y*240+x] = 0;
+    		 }
+    	 }
+     }
+     int Rca;
+     int Bca;
+     int Gca;
+     printf("cmin=%f ,cmax=%f\n",cmin,cmax);
+
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -1073,13 +1230,15 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM3_Init();
   MX_USB_DEVICE_Init();
-  MX_USART2_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   //0 1 2 3 0
 #if (NUMBER_OF_LCD)
   LCD_reset();
 #endif
+
   printf("\nStart program\n");
+  HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
   cleanAudioBuffer();
   TIM3->PSC  = (int)(SYS_CLK_MHZ*1000000.0f/TIMER_CLOCK_FREQ)-1;
   HAL_TIM_Base_Start(&htim3);
@@ -1103,6 +1262,7 @@ int main(void)
 #endif
   printf("Start Speed %x\n",readSpeedXScaled);
   printf("Freq  = %f,sSpeed= %x %04d %04d %04d speed=%x\n",SYS_CLK_MHZ*1000000.0/(MAX_VOL),sForcedSpeed,HalfTransfer_CallBack_FS_Counter,TransferComplete_CallBack_FS_Counter,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled);
+  int  mode = 2;
 #if (NUMBER_OF_LCD)
 	  for(int l=0;l<NUMBER_OF_LCD;l++)
 	  {
@@ -1115,8 +1275,14 @@ int main(void)
 			  LCD_setRotation(PORTRAIT_FLIP);
 			  {
 					uint32_t trt = HAL_GetTick();
-					//LCD_fillRect(0, 0, LCD_getWidth(), LCD_getHeight(), rand());
-					LCD_fillRectData(0, 0, LCD_getWidth(), LCD_getHeight(),getLCD_Data());
+if (mode==3||mode==4)
+{
+			paintLevels(0.0,1);
+}
+else
+{
+			LCD_fillRectData(0, 0, LCD_getWidth(), LCD_getHeight(),getLCD_Data());
+}
 					trt = (HAL_GetTick()-trt);
 					printf("SCR_FULL %d uS\n",trt*1000);
 
@@ -1131,38 +1297,43 @@ int main(void)
   float elapsed_time = 0;
   int  elapsed_time_ticks = 0;
   int32_t prev_tick = 0;
-  int  mode = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int timcnt =0;
+  //int timcnt =0;
+  int ko = 0;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  timcnt++;
-	  if(timcnt%100==0)
+	  //timcnt++;
+	  // mode = 0 display off
+	  // mode = 1 display 2 ma
+	  // mode = 2 display  6E5C
+	  // mode = 3 display  6Е1П
+	  REF_COLOR = (((uint16_t)TIM2->CNT)+120)%360;
+	  if(HAL_GetTick()/2048!=ko)
 	  {
+		  ko = HAL_GetTick()/2048;
 	  // printf("%04d %04d %04d %04d %04d\n",HalfTransfer_CallBack_FS_Counter,TransferComplete_CallBack_FS_Counter,AUDIO_PeriodicTC_FS_Counter,AUDIO_OUT_Play_Counter,AUDIO_OUT_ChangeBuffer_Counter);
-		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %x\n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_SPI_TxCpltCallbackCnt);
+		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %x %01d %07d\n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_SPI_TxCpltCallbackCnt,HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin),TIM2->CNT);
 
 	  }
-	  if(HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin)==0 && NUMBER_OF_LCD > 0)
+#if   NUMBER_OF_LCD > 0
+	  if(HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin)==0 )
 	  {
+		 mode = (mode+1)%5;
 		 if(mode==0)
 		 {
 			 HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin,GPIO_PIN_RESET);
    		     LCD_reset();
 			 HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin,GPIO_PIN_RESET);
-	  HAL_Delay(1000);
-			 mode = 1;
 		 }
-		 else
+		 else if(mode==1)
 		 {
-			 mode = 0;
-
+			  LCD_TYPE = 0;
 			  for(int l=0;l<NUMBER_OF_LCD;l++)
 			  {
 				  pcXe_OLD[l] = -1;
@@ -1175,22 +1346,59 @@ int main(void)
 				  }
 			  }
 			 HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin,GPIO_PIN_SET);
-	  HAL_Delay(1000);
 		 }
+		 else if(mode==2)
+		 {
+			  LCD_TYPE = 1;
+			  for(int l=0;l<NUMBER_OF_LCD;l++)
+			  {
+				  pcXe_OLD[l] = -1;
+				  if(LCD_TYPE==0||l==0)
+				  {
+				  setLCD(l);
+				  LCD_init();
+				  LCD_setRotation(PORTRAIT_FLIP);
+				  LCD_fillRectData(0, 0, LCD_getWidth(), LCD_getHeight(),getLCD_Data());
+				  }
+			  }
+			 HAL_GPIO_WritePin(LCD_BL_GPIO_Port, LCD_BL_Pin,GPIO_PIN_SET);
+		 }
+		 else if(mode==3)
+		 {
+			tableSetup();
+			paintLevels(0.0,1);
+
+		 }
+		 else if(mode==4)
+		 {
+			  tableSetup1();
+			  paintLevels(0.0,1);
+		 }
+		 HAL_Delay(100);
 	  }
 		//ampL = (ampL*15)/(16);
 		//ampR = (ampR*15)/(16);
-	  if(mode==0)
+	  if(mode!=0)
 	  {
 			//LCD_fillRectData(0, 0, LCD_getWidth(), LCD_getHeight(),getImageData());
 		    uint32_t trt = HAL_GetTick();
 		    int deltaTicks = trt - prev_tick;
+		    prev_tick = trt;
 		    //300 millisecond
 //#define decayFact (-1.0f/300)
 #define decayFact (-1.0f/600)
-		    float decay = expf(deltaTicks*decayFact);
-		    prev_tick = trt;
-
+#define OVER_AMPL   1.5f
+		float decay = expf(deltaTicks*decayFact);
+		if(mode==3||mode==4)
+		{
+			float factMaxInputEnergy_inv = OVER_AMPL/((1<<USB_DATA_BITS_H)*2/sqrt(2));
+			float ampl = (ampR+ampL)*0.5f*factMaxInputEnergy_inv;
+			ampl = logf(ampl*(expf(1.0f)-1.0f)+1.0f);
+			//if(ampl>1.0f) ampl = 1.0f;
+		    paintLevels(ampl*1.0f,0);
+		}
+		else
+		{
 		    for(int l=0;l<NUMBER_OF_LCD;l++)
 		    {
 		    	if(LCD_TYPE==0||l==0)
@@ -1200,7 +1408,6 @@ int main(void)
 		    	float arrowLength  = getPixelLength(l);
 				vec2f vc = {arrowLength,0.0f};
 				mat4f mt;
-#define OVER_AMPL   1.5f
 				float factMaxInputEnergy_inv = OVER_AMPL/((1<<USB_DATA_BITS_H)*2/sqrt(2));
 				float ampl = ((l==0)?ampL:ampR)* factMaxInputEnergy_inv;
 #if (NUMBER_OF_LCD==1 && LCD_TYPE==0)
@@ -1263,15 +1470,17 @@ int main(void)
 				 pcXe_OLD[l] = pcXe;
 				 pcYe_OLD[l] = pcYe;
 		    }
-		    ampL =ampL*decay;
-		    ampR =ampR*decay;
-		    elapsed_time_ticks = HAL_GetTick() - trt;
 			//printf(txt,"%03d %03d\n",ampL,ampR);
 			//LCD_Draw_Text(txt,0,0,GREEN, 2,BLACK);
+		}
+		elapsed_time_ticks = HAL_GetTick() - trt;
+		HAL_Delay(30);
+		ampL =ampL*decay;
+		ampR =ampR*decay;
 	  }
-	  HAL_Delay(20);
-
   }
+  HAL_Delay(2);
+#endif
   /* USER CODE END 3 */
 }
 
@@ -1565,6 +1774,55 @@ static void MX_TIM1_Init(void)
 }
 
 /**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_Encoder_InitTypeDef sConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 0;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 10;
+  if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief TIM3 Initialization Function
   * @param None
   * @retval None
@@ -1639,39 +1897,6 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
 
 }
 
