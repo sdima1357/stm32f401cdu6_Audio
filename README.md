@@ -60,5 +60,21 @@ optional external i2s module
 
 ![image1](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/P1010093.JPG?raw=true)
 
+![image3](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220524_193907.jpg?raw=true)
+
+![image4](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220524_193927_3.jpg?raw=true)
+
+![image5](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220524_193935_3.jpg?raw=true)
+
+![image6](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220524_193944_2.jpg?raw=true)
+
+![image7](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220524_194003_3.jpg?raw=true)
+
+![image8](https://github.com/sdima1357/stm32f401cdu6_Audio/blob/main/images/IMG_20220529_131254_3.jpg?raw=true)
+
+
+
+
+
 
 
