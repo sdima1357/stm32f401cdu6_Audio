@@ -72,7 +72,7 @@ unsigned char *getImageData();
 
 #ifdef  USE_PWM
 #if     (ORDER!=0)
-#define FREQ  (48000*5)
+#define FREQ  (48000*6)
 #define MAX_VOL  (SYS_CLK_MHZ*1000000/FREQ)
 #else
 #define FREQ  (44100)
