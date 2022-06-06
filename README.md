@@ -2,8 +2,10 @@
 stm32 green pill usb sound card
 last one (press on image for video): 
 
+[![Watch the video](https://img.youtube.com/vi/8jB26_xrSuw/maxresdefault.jpg)](https://www.youtube.com/watch?v=8jB26_xrSuw)
 
 [![Watch the video](https://img.youtube.com/vi/KB1A08Pj6nc/maxresdefault.jpg)](https://www.youtube.com/watch?v=KB1A08Pj6nc)
+
 
 https://www.youtube.com/watch?v=0MmWp3HdV2A
 
