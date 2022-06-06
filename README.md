@@ -1,8 +1,9 @@
 # stm32f401ccAudioNative
 stm32 green pill usb sound card
 last one: 
-https://www.youtube.com/watch?v=KB1A08Pj6nc
 
+
+[![Watch the video](https://img.youtube.com/vi/KB1A08Pj6nc/maxresdefault.jpg)](https://www.youtube.com/watch?v=KB1A08Pj6nc)
 
 https://www.youtube.com/watch?v=0MmWp3HdV2A
 
