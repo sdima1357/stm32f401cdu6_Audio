@@ -1,0 +1,6 @@
+usbd_ctlreq.c:100:20:USBD_StdDevReq	32	static
+usbd_ctlreq.c:163:20:USBD_StdItfReq	16	static
+usbd_ctlreq.c:214:20:USBD_StdEPReq	16	static
+usbd_ctlreq.c:839:6:USBD_ParseSetupRequest	0	static
+usbd_ctlreq.c:868:6:USBD_CtlError	8	static
+usbd_ctlreq.c:885:6:USBD_GetString	12	static

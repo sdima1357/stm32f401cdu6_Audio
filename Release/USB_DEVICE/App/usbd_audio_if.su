@@ -1,0 +1,9 @@
+usbd_audio_if.c:172:15:AUDIO_DeInit_FS	0	static
+usbd_audio_if.c:211:15:AUDIO_VolumeCtl_FS	0	static
+usbd_audio_if.c:252:15:AUDIO_GetState_FS	0	static
+usbd_audio_if.c:237:15:AUDIO_PeriodicTC_FS	8	static
+usbd_audio_if.c:187:15:AUDIO_AudioCmd_FS	8	static
+usbd_audio_if.c:156:15:AUDIO_Init_FS	8	static
+usbd_audio_if.c:224:15:AUDIO_MuteCtl_FS	0	static
+usbd_audio_if.c:263:6:TransferComplete_CallBack_FS	0	static
+usbd_audio_if.c:274:6:HalfTransfer_CallBack_FS	0	static
