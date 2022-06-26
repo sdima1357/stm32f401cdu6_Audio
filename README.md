@@ -57,6 +57,11 @@ optional external i2s module
 
 -- detected problems with new STM32Cube_FW_F4_V1.27.0 audio driver. please build with <=STM32Cube_FW_F4_V1.26.0 . WIP
 
+26.06.2022
+
+-- add spdif output via i2s data pin
+
+
 
 ![image2](https://github.com/sdima1357/stm32f401ccAudioNative/blob/main/images/schematic1.png?raw=true)
 
