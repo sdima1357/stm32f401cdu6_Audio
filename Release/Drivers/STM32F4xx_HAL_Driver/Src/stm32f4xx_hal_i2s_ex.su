@@ -1,9 +1,0 @@
-stm32f4xx_hal_i2s_ex.c:925:13:I2SEx_TxRxDMAError	4	static
-stm32f4xx_hal_i2s_ex.c:208:19:HAL_I2SEx_TransmitReceive	72	static
-stm32f4xx_hal_i2s_ex.c:429:19:HAL_I2SEx_TransmitReceive_IT	8	static
-stm32f4xx_hal_i2s_ex.c:541:19:HAL_I2SEx_TransmitReceive_DMA	32	static
-stm32f4xx_hal_i2s_ex.c:825:13:HAL_I2SEx_TxRxHalfCpltCallback	0	static
-stm32f4xx_hal_i2s_ex.c:868:13:I2SEx_TxRxDMAHalfCplt	8	static
-stm32f4xx_hal_i2s_ex.c:840:13:HAL_I2SEx_TxRxCpltCallback	0	static
-stm32f4xx_hal_i2s_ex.c:886:13:I2SEx_TxRxDMACplt	8	static
-stm32f4xx_hal_i2s_ex.c:679:6:HAL_I2SEx_FullDuplex_IRQHandler	40	static

@@ -47,6 +47,7 @@ unsigned char *getImageData();
 // use internal timers for sound out
 #define   USE_PWM
 //#define USE_I2S
+//#define   USE_SPDIF
 //#define USE_SERIAL
 
 
@@ -80,9 +81,14 @@ unsigned char *getImageData();
 #endif
 #endif
 
-#ifdef  USE_I2S //No PWM, I2S output to external DAC
+#ifdef  USE_I2S  //No PWM, I2S output to external DAC
 #define MAX_VOL (65536)
-#define FREQ   96000
+#define FREQ   (2*96000)
+#endif
+
+#ifdef  USE_SPDIF  //No PWM, I2S output to external DAC
+#define MAX_VOL (65536)
+#define FREQ   (96000/2)
 #endif
 
 #ifdef  USE_SERIAL // sound out to serial
@@ -101,8 +107,15 @@ unsigned char *getImageData();
 #define USB_DATA_BITS   16
 #define USB_DATA_BITS_H (USB_DATA_BITS-1)
 
+
+#define SPDIF_FRAMES 192
+#ifdef  USE_SPDIF
+#define N_SIZE      (SPDIF_FRAMES*4)
+#else
 #define N_SIZE_BITS (8)
 #define N_SIZE (1<<N_SIZE_BITS)
+#endif
+
 
 #define ASBUF_SIZE     (N_SIZE*2)
 int16_t baudio_buffer[ASBUF_SIZE];
@@ -682,8 +695,11 @@ void checkTime()
     int mean = median3(tfl_mean[0],tfl_mean[1],tfl_mean[2]);
     if (!mean) mean = 1;
 
-
+#ifdef USE_SPDIF
+	outDmaSpeedScaled =  TIME_SCALE_FACT*N_SIZE/4*DBL_SAMPL/(mean);
+#else
 	outDmaSpeedScaled =  TIME_SCALE_FACT*N_SIZE*DBL_SAMPL/(mean);
+#endif
 }
 void readDataTim(int offset)
 {
@@ -904,13 +920,58 @@ void HAL_SPI_TxHalfCpltCallback(SPI_HandleTypeDef *hspi)
 	readDataSerail(0);
 	}
 }
+//http://www.hardwarebook.info/S/PDIF
+//https://sigrok.org/wiki/Protocol_decoder:Spdif
+//uint8_t chanel_bit[SPDIF_FRAMES] = {0,0,1,0,0,0};
+uint8_t chanel_bit[SPDIF_FRAMES] = {0,0,0,0,0,0};
+int     last_phase = 0;
 
+uint16_t bitTable[256];
+void makePTable()
+{
+	for(int k=0;k<256;k++)
+	{
+		int flag = 0;
+		uint16_t num =0;
+		for(int bit=0;bit<8;bit++)
+		{
+			int ind = 15-bit*2;
+			if(k&(1<<bit))
+			{
+				num |= (!flag)<<(ind);
+				num |=   flag <<(ind-1);
+			}
+			else
+			{
+				flag= !flag;
+				num |= flag<<(ind);
+				num |= flag<<(ind-1);
+			}
+		}
+		bitTable[k] = num;
+	}
+}
+#define MARKER_B 0b1110100011001100
+#define MARKER_M 0b1110001011001100
+#define MARKER_W 0b1110010011001100
+#define VALIDITY     (28u)
+#define SUB     	 (29u)
+#define CH           (30u)
+#define PARITY       (31u)
+uint32_t parity(uint32_t val)
+{
+	return __builtin_parity(val);
+}
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
     checkTime();
-    if(UsbSamplesAvail > N_SIZE/2)
+	int FACTOR= 1;
+#ifdef USE_SPDIF
+	FACTOR= 4;
+#endif
+    if(UsbSamplesAvail > N_SIZE/2/FACTOR)
     {
-    	UsbSamplesAvail -= N_SIZE/2;
+    	UsbSamplesAvail -= N_SIZE/2/FACTOR;
     }
     else
     {
@@ -920,29 +981,158 @@ void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
 
 
 	TransferComplete_CallBack_FS_Counter++;
+#ifdef USE_I2S
     struct LR * bfr = ((struct LR *) baudio_buffer)+ASBUF_SIZE/4;
 	for(int k=0;k<ASBUF_SIZE/4;k++)
 	{
 		bfr[k] = getNextSampleLR(/*k+ASBUF_SIZE/4*/);
 
 	}
+#endif
+#ifdef USE_SPDIF
+	uint16_t *bbuf = (uint16_t *)&baudio_buffer[ASBUF_SIZE/2];
+	for(int k=0;k<SPDIF_FRAMES/2;k++)
+	{
+		struct LR lr = getNextSampleLR(/*k*/);
+//		uint32_t lv = ((int)(lr.L)+(1<<USB_DATA_BITS_H))<<(26-USB_DATA_BITS_H);
+//		uint32_t rv = ((int)(lr.R)+(1<<USB_DATA_BITS_H))<<(26-USB_DATA_BITS_H);
+		uint16_t L = lr.L;
+		uint16_t R = lr.R;
+
+		uint32_t lv = ((uint32_t)(L))<<(27-USB_DATA_BITS_H);
+		uint32_t rv = ((uint32_t)(R))<<(27-USB_DATA_BITS_H);
+
+		lv |= (chanel_bit[k+SPDIF_FRAMES/2]<<CH)+(0<<VALIDITY)+(0<<SUB);
+		lv |= parity(lv)<<PARITY;
+		//b
+		{
+			uint16_t nm0 = MARKER_M;
+			if(last_phase) nm0 = ~nm0;
+			last_phase = nm0 & 1;
+			uint16_t nm1 = bitTable[(lv>>(8))&0xff];
+			if(last_phase) nm1 = ~nm1;
+			last_phase = nm1 & 1;
+			uint16_t nm2 = bitTable[(lv>>(16))&0xff];
+			if(last_phase) nm2 = ~nm2;
+			last_phase = nm2 & 1;
+			uint16_t nm3 = bitTable[(lv>>(24))&0xff];
+			if(last_phase) nm3 = ~nm3;
+			last_phase = nm3 & 1;
+
+			bbuf[k*8+0] = nm0;
+			bbuf[k*8+1] = nm1;
+			bbuf[k*8+2] = nm2;
+			bbuf[k*8+3] = nm3;
+		}
+
+		rv |= (chanel_bit[k+SPDIF_FRAMES/2]<<CH)+(0<<VALIDITY)+(0<<SUB);
+		rv |= parity(rv)<<PARITY;
+		{
+			uint16_t nm0 = MARKER_W;
+			if(last_phase) nm0 = ~nm0;
+			last_phase = nm0 & 1;
+			uint16_t nm1 = bitTable[(rv>>(8))&0xff];
+			if(last_phase) nm1 = ~nm1;
+			last_phase = nm1 & 1;
+			uint16_t nm2 = bitTable[(rv>>(16))&0xff];
+			if(last_phase) nm2 = ~nm2;
+			last_phase = nm2 & 1;
+			uint16_t nm3 = bitTable[(rv>>(24))&0xff];
+			if(last_phase) nm3 = ~nm3;
+			last_phase = nm3 & 1;
+
+			bbuf[k*8+4] = nm0;
+			bbuf[k*8+5] = nm1;
+			bbuf[k*8+6] = nm2;
+			bbuf[k*8+7] = nm3;
+		}
+	}
+#endif
+
 }
 
 //void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
 {
-    if(UsbSamplesAvail > N_SIZE/2)
+	int FACTOR= 1;
+#ifdef USE_SPDIF
+	FACTOR= 4;
+#endif
+    if(UsbSamplesAvail > N_SIZE/2/FACTOR)
     {
-    	UsbSamplesAvail -= N_SIZE/2;
+    	UsbSamplesAvail -= N_SIZE/2/FACTOR;
     }
     else
     {
     	UsbSamplesAvail = 0;
     }
-	HalfTransfer_CallBack_FS_Counter++;
+
+    HalfTransfer_CallBack_FS_Counter++;
+#ifdef USE_I2S
 	struct LR * bfr = ((struct LR *) baudio_buffer);
 	for(int k=0;k<ASBUF_SIZE/4;k++)
 		bfr[k] = getNextSampleLR(/*k*/);
+#endif
+#ifdef USE_SPDIF
+	uint16_t *bbuf = (uint16_t *)&baudio_buffer[0];
+	for(int k=0;k<SPDIF_FRAMES/2;k++)
+	{
+		struct LR lr = getNextSampleLR(/*k*/);
+//		uint32_t lv = ((int)(lr.L)+(1<<USB_DATA_BITS_H))<<(26-USB_DATA_BITS_H);
+//		uint32_t rv = ((int)(lr.R)+(1<<USB_DATA_BITS_H))<<(26-USB_DATA_BITS_H);
+		uint16_t L = lr.L;
+		uint16_t R = lr.R;
+
+		uint32_t lv = ((uint32_t)(L))<<(27-USB_DATA_BITS_H);
+		uint32_t rv = ((uint32_t)(R))<<(27-USB_DATA_BITS_H);
+
+		lv |= (chanel_bit[k]<<CH)+(0<<VALIDITY)+(0<<SUB);
+		lv |= parity(lv)<<PARITY;
+		//b
+		{
+			uint16_t nm0 = k==0?MARKER_B:MARKER_M;
+			if(last_phase) nm0 = ~nm0;
+			last_phase = nm0 & 1;
+			uint16_t nm1 = bitTable[(lv>>(8))&0xff];
+			if(last_phase) nm1 = ~nm1;
+			last_phase = nm1 & 1;
+			uint16_t nm2 = bitTable[(lv>>(16))&0xff];
+			if(last_phase) nm2 = ~nm2;
+			last_phase = nm2 & 1;
+			uint16_t nm3 = bitTable[(lv>>(24))&0xff];
+			if(last_phase) nm3 = ~nm3;
+			last_phase = nm3 & 1;
+
+			bbuf[k*8+0] = nm0;
+			bbuf[k*8+1] = nm1;
+			bbuf[k*8+2] = nm2;
+			bbuf[k*8+3] = nm3;
+		}
+
+		rv |= (chanel_bit[k]<<CH)+(0<<VALIDITY)+(0<<SUB);
+		rv |= parity(rv)<<PARITY;
+		{
+			uint16_t nm0 = MARKER_W;
+			if(last_phase) nm0 = ~nm0;
+			last_phase = nm0 & 1;
+			uint16_t nm1 = bitTable[(rv>>(8))&0xff];
+			if(last_phase) nm1 = ~nm1;
+			last_phase = nm1 & 1;
+			uint16_t nm2 = bitTable[(rv>>(16))&0xff];
+			if(last_phase) nm2 = ~nm2;
+			last_phase = nm2 & 1;
+			uint16_t nm3 = bitTable[(rv>>(24))&0xff];
+			if(last_phase) nm3 = ~nm3;
+			last_phase = nm3 & 1;
+
+			bbuf[k*8+4] = nm0;
+			bbuf[k*8+5] = nm1;
+			bbuf[k*8+6] = nm2;
+			bbuf[k*8+7] = nm3;
+		}
+	}
+#endif
+
 	//HalfTransfer_CallBack_FS();
 }
 
@@ -1254,6 +1444,11 @@ int main(void)
   stat = HAL_I2S_Transmit_DMA(&hi2s2, baudio_buffer,ASBUF_SIZE);
   HAL_Delay(100);
 #endif
+#ifdef  USE_SPDIF
+  makePTable();
+  stat = HAL_I2S_Transmit_DMA(&hi2s2, baudio_buffer,ASBUF_SIZE);
+  HAL_Delay(100);
+#endif
 #ifdef  USE_SERIAL
   //stat = HAL_SPI_Transmit_DMA(&hspi1, VoiceBuff0,N_SIZE);
 
@@ -1318,7 +1513,7 @@ else
 	  {
 		  ko = HAL_GetTick()/2048;
 	  // printf("%04d %04d %04d %04d %04d\n",HalfTransfer_CallBack_FS_Counter,TransferComplete_CallBack_FS_Counter,AUDIO_PeriodicTC_FS_Counter,AUDIO_OUT_Play_Counter,AUDIO_OUT_ChangeBuffer_Counter);
-		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %x %01d %07d\n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_SPI_TxCpltCallbackCnt,HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin),TIM2->CNT);
+		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %x %01d %07d s=%d %d %d %d\n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_SPI_TxCpltCallbackCnt,HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin),TIM2->CNT,UsbSamplesAvail,parity(0),parity(1),parity(0x700));
 
 	  }
 #if   NUMBER_OF_LCD > 0
@@ -1547,7 +1742,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
   hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
-  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_96K;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_192K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
   hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
   hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
