@@ -1,4 +1,5 @@
-# stm32f401ccAudioNative
+#stm32f401cdu6_Audio
+
 stm32 green pill usb sound card
 last one (press on image for video): 
 
