@@ -9,10 +9,10 @@
   * <h2><center>&copy; Copyright (c) 2022 STMicroelectronics.
   * All rights reserved.</center></h2>
   *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
+  * This software component is licensed by ST under Ultimate Liberty license
+  * SLA0044, the "License"; You may not use this file except in compliance with
+  * the License. You may obtain a copy of the License at:
+  *                             www.st.com/SLA0044
   *
   ******************************************************************************
   */
@@ -33,7 +33,6 @@ unsigned char *getImageData();
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -48,7 +47,6 @@ unsigned char *getImageData();
 #define   USE_PWM
 //#define USE_I2S
 //#define   USE_SPDIF
-//#define USE_SERIAL
 
 
 // from 0 to 2 SPI LCD
@@ -91,13 +89,7 @@ unsigned char *getImageData();
 #define FREQ   (96000/2)
 #endif
 
-#ifdef  USE_SERIAL // sound out to serial
-#define DBL_SAMPL 2
-#define MAX_VOL (1)
-#define FREQ  (48000*4*DBL_SAMPL)
-#else
 #define DBL_SAMPL 1
-#endif
 
 
 #define SIGMA_BITS  16
@@ -147,6 +139,7 @@ DMA_HandleTypeDef hdma_spi2_tx;
 
 SPI_HandleTypeDef hspi1;
 SPI_HandleTypeDef hspi3;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -605,13 +598,13 @@ float sigma_delta_slow(struct sigmaDeltaStorage* st,float x)
 struct  sigmaDeltaStorage_SCALED
 {
 	int integral;
-	int y;
+//	int y;
 };
 struct  sigmaDeltaStorage2_SCALED
 {
 	int integral0;
 	int integral1;
-	int y;
+	//int y;
 };
 
 float sigma_delta(struct sigmaDeltaStorage* st,float x)
@@ -638,27 +631,28 @@ float sigma_delta2(struct sigmaDeltaStorage2* st,float x)
 
 int sigma_delta_SCALED(struct sigmaDeltaStorage_SCALED* st,int x_SCALED)
 {
-	st->integral+= x_SCALED - (st->y<<SIGMA_BITS); //post diff
-	//st->y		 =(st->integral+SIGMA/2)/SIGMA;
-	st->y		 =st->integral>>SIGMA_BITS;
-	if(st->y < 0)
-		st->y = 0;
-	if(st->y > MAX_VOL)
-		st->y = MAX_VOL;
-	return st->y;
+	int y		 =st->integral>>SIGMA_BITS;
+	if(y < 0)
+		y = 0;
+	if(y > MAX_VOL)
+		y = MAX_VOL;
+
+	st->integral+= x_SCALED - (y<<SIGMA_BITS);
+	return y;
 }
 
 int sigma_delta2_SCALED(struct sigmaDeltaStorage2_SCALED* st,int x_SCALED)
 {
-	st->integral0+= x_SCALED      - (st->y<<SIGMA_BITS);
-	st->integral1+= st->integral0 - (st->y<<SIGMA_BITS);
+	int y		 =st->integral1>>SIGMA_BITS;
+	if(y < 0)
+		y = 0;
+	if(y > MAX_VOL)
+		y = MAX_VOL;
+
+	st->integral0+= x_SCALED      - (y<<SIGMA_BITS);
+	st->integral1+= st->integral0 - (y<<SIGMA_BITS);
 	//st->y		 =(st->integral1+SIGMA/2)/SIGMA;
-	st->y		 =st->integral1>>SIGMA_BITS;
-	if(st->y < 0)
-		st->y = 0;
-	if(st->y > MAX_VOL)
-		st->y = MAX_VOL;
-	return st->y;
+	return y;
 }
 
 struct sigmaDeltaStorage static_L_channel;
@@ -778,148 +772,7 @@ void TIM1_HT1()
     readDataTim(0);
 }
 
-int     integralL=0;
-int     integralR=0;
-uint16_t sigma_delta_SCALED_01(int*integral,int x_SCALED)
-{
-	uint32_t res = 0;
-	for(int t=0;t<16;t++)
-	{
-		*integral +=  x_SCALED;
 
-		res <<= 1 ;
-
-        if((*integral)>=73009)
-        {
-        	res |= 1;
-        	(*integral)-= 73009;
-        }
-//		res |= (*integral)&SIGMA?1:0;
-
-		//if(flag) (*integral)-=SIGMA;
-//		(*integral) &= SIGMA-1;
-	}
-	return res;
-}
-
-void readDataSerail(int offset)
-{
-	struct LR tt;
-	for(int k=0;k<N_SIZE/2;k++)
-	{
-		struct LR tt =getNextSampleLR(/*k+ASBUF_SIZE/4*/);
-		VoiceBuff0[k+offset] =sigma_delta_SCALED_01(&integralL,tt.L+(1<<USB_DATA_BITS_H));
-		//VoiceBuff1[k+offset] =sigma_delta_SCALED_01(&integralR,tt.R+(1<<USB_DATA_BITS_H));
-	}
-}
-int integralUL = 0;
-//#define PRIME_NUM 120121
-//#define PRIME_NUM 73009
-//#define PRIME_NUM 71993
-#define PRIME_NUM 69313
-uint8_t sigma_delta_SCALED_5(uint8_t* val,uint32_t *integral,int x_SCALED)
-{
-	for(int t=0;t<5;t++)
-	{
-		*val>>=1;
-		(*integral) +=  x_SCALED;
-
-		//res >>= 1 ;
-        if((*integral)>=PRIME_NUM)
-        {
-        	*val |= 0x80;
-        	(*integral)-=PRIME_NUM;
-        }
-		//res |= (*integral)&SIGMA;
-		//(*integral) &= SIGMA-1;
-	}
-	return *val;
-}
-uint8_t sigma_delta_SCALED_3(uint8_t* val,uint32_t *integral,int x_SCALED)
-{
-	for(int t=0;t<3;t++)
-	{
-		*val>>=1;
-		(*integral) +=  x_SCALED;
-
-		//res >>= 1 ;
-        if((*integral)>=PRIME_NUM)
-        {
-        	*val |= 0x80;
-        	(*integral)-=PRIME_NUM;
-        }
-		//res |= (*integral)&SIGMA;
-		//(*integral) &= SIGMA-1;
-	}
-	return *val;
-}
-uint8_t sigma_delta_SCALED_4(uint8_t* val,uint32_t *integral,int x_SCALED)
-{
-	for(int t=0;t<3;t++)
-	{
-		*val>>=1;
-		(*integral) +=  x_SCALED;
-
-		//res >>= 1 ;
-        if((*integral)>=PRIME_NUM)
-        {
-        	*val |= 0x80;
-        	(*integral)-=PRIME_NUM;
-        }
-		//res |= (*integral)&SIGMA;
-		//(*integral) &= SIGMA-1;
-	}
-	return *val;
-}
-
-void readDataSerail8(int offset)
-{
-	struct LR tt;
-	uint8_t* buff0 = (uint8_t*) VoiceBuff0;
-	for(int k=0;k<N_SIZE/2;k++)
-	{
-		struct LR tt =getNextSampleLR(/*k+ASBUF_SIZE/4*/);
-		uint8_t val = 0;
-		sigma_delta_SCALED_4(&val,&integralUL,tt.L+(1<<USB_DATA_BITS_H));
-		tt =getNextSampleLR(/*k+ASBUF_SIZE/4*/);
-		sigma_delta_SCALED_4(&val,&integralUL,tt.L+(1<<USB_DATA_BITS_H));
-		buff0[k+offset] =val;
-	}
-}
-int HAL_SPI_TxCpltCallbackCnt;
-void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-	if(hspi==&hspi1)
-	{
-		HAL_SPI_TxCpltCallbackCnt++;
-    checkTime();
-    if(UsbSamplesAvail > N_SIZE/2)
-    {
-    	UsbSamplesAvail -= N_SIZE/2;
-    }
-    else
-    {
-    	UsbSamplesAvail = 0;
-    }
-    readDataSerail(N_SIZE/2);
-	}
-}
-
-void HAL_SPI_TxHalfCpltCallback(SPI_HandleTypeDef *hspi)
-{
-	if(hspi==&hspi1)
-	{
-    if(UsbSamplesAvail > N_SIZE/2)
-    {
-    	UsbSamplesAvail -= N_SIZE/2;
-    }
-    else
-    {
-    	UsbSamplesAvail = 0;
-    }
-	readDataSerail(0);
-	}
-}
 //http://www.hardwarebook.info/S/PDIF
 //https://sigrok.org/wiki/Protocol_decoder:Spdif
 //uint8_t chanel_bit[SPDIF_FRAMES] = {0,0,1,0,0,0};
@@ -1195,8 +1048,11 @@ float getAngleAmp()
 		}
 		return 90;
 }
+
+#define EOFS  40
+
 //#ifdef EYE
-uint8_t ftable[240*240];
+uint8_t ftable[(240-EOFS*2)*(240-EOFS*2)];
 uint8_t ctable[256*2];
 //#endif
 
@@ -1300,7 +1156,9 @@ void paintLevels(float level,int full)
 	}
 	if(full)
 	{
-		LCD_fillRectDataTable(0, 0, LCD_getWidth(), LCD_getHeight(),ftable,ctable);
+		//LCD_fillRectDataTable(0, 0, LCD_getWidth(), LCD_getHeight(),ftable,ctable);
+		LCD_fillRect(0, 0, LCD_getWidth(), LCD_getHeight(),BLACK);
+		LCD_fillRectDataTable(EOFS, EOFS, LCD_getWidth()-EOFS*2, LCD_getHeight()-EOFS*2,ftable,ctable);
 	}
 	else
 	{
@@ -1315,9 +1173,9 @@ void tableSetup()
      vec2f center = {119.5,119.5 };
      // normalized base vector up
      vec2f base =   {0 ,1 };
-     for(int y=0;y<240;y++)
+     for(int y=EOFS;y<240-EOFS;y++)
      {
-    	 for(int x=0;x<240;x++)
+    	 for(int x=EOFS;x<240-EOFS;x++)
     	 {
     		 float dx = (x - center.x);
     		 float dy = (y - center.y);
@@ -1327,11 +1185,11 @@ void tableSetup()
     		 int pos = satur(256*angle/M_PI,1,254)+1;
     		 if(norma<(240/2-EOFS)&&norma>30)
     		 {
-    		   ftable[y*240+x] = pos;
+    		   ftable[(y-EOFS)*(240-(EOFS*2))+x-EOFS] = pos;
     		 }
     		 else
     		 {
-    			 ftable[y*240+x] = 0;
+    			 ftable[(y-EOFS)*(240-(EOFS*2))+x-EOFS] = 0;
     		 }
     	 }
      }
@@ -1352,9 +1210,9 @@ void tableSetup1()
      float cmax = -1000;
      // normalized base vector up
      vec2f base =   {0 ,-1 };
-     for(int y=0;y<240;y++)
+     for(int y=EOFS;y<240-EOFS;y++)
      {
-    	 for(int x=0;x<240;x++)
+    	 for(int x=EOFS;x<240-EOFS;x++)
     	 {
     		 float dx = (x - center.x);
     		 float dy = (y - center.y);
@@ -1367,11 +1225,11 @@ void tableSetup1()
     		 pos = satur(pos,1,254)+1;
     		 if(norma<(240-EOFS*2)&&norma>35&&x>EOFS&&x<240-EOFS&&y>EOFS&&y<240-EOFS)
     		 {
-    		   ftable[y*240+x] = pos;
+    		   ftable[(y-EOFS)*(240-(EOFS*2))+x-EOFS] = pos;
     		 }
     		 else
     		 {
-    			 ftable[y*240+x] = 0;
+    			 ftable[(y-EOFS)*(240-(EOFS*2))+x-EOFS] = 0;
     		 }
     	 }
      }
@@ -1449,12 +1307,6 @@ int main(void)
   stat = HAL_I2S_Transmit_DMA(&hi2s2, baudio_buffer,ASBUF_SIZE);
   HAL_Delay(100);
 #endif
-#ifdef  USE_SERIAL
-  //stat = HAL_SPI_Transmit_DMA(&hspi1, VoiceBuff0,N_SIZE);
-
-  HAL_UART_Transmit_DMA(&huart2,VoiceBuff0,N_SIZE);
-  HAL_Delay(100);
-#endif
   printf("Start Speed %x\n",readSpeedXScaled);
   printf("Freq  = %f,sSpeed= %x %04d %04d %04d speed=%x\n",SYS_CLK_MHZ*1000000.0/(MAX_VOL),sForcedSpeed,HalfTransfer_CallBack_FS_Counter,TransferComplete_CallBack_FS_Counter,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled);
   int  mode = 2;
@@ -1476,6 +1328,16 @@ if (mode==3||mode==4)
 }
 else
 {
+	  LCD_setRotation(PORTRAIT_FLIP);
+//	  for(int kkk=0;kkk<20;kkk++)
+//	  {
+//		  LCD_fillRect(0, 0, LCD_getWidth(), LCD_getHeight(),rand());
+//	  }
+//	  LCD_setRotation(PORTRAIT_FLIP);
+//	  for(int kkk=0;kkk<20;kkk++)
+//	  {
+//		  LCD_fillRect(0, 0, LCD_getWidth(), LCD_getHeight(),rand());
+//	  }
 			LCD_fillRectData(0, 0, LCD_getWidth(), LCD_getHeight(),getLCD_Data());
 }
 					trt = (HAL_GetTick()-trt);
@@ -1513,9 +1375,9 @@ else
 	  {
 		  ko = HAL_GetTick()/2048;
 	  // printf("%04d %04d %04d %04d %04d\n",HalfTransfer_CallBack_FS_Counter,TransferComplete_CallBack_FS_Counter,AUDIO_PeriodicTC_FS_Counter,AUDIO_OUT_Play_Counter,AUDIO_OUT_ChangeBuffer_Counter);
-		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %x %01d %07d s=%d %d %d %d\n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_SPI_TxCpltCallbackCnt,HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin),TIM2->CNT,UsbSamplesAvail,parity(0),parity(1),parity(0x700));
+		  printf("MAX_VOL = %d INSpeed=%0.01f Hz outSpeed=%0.01f Hz %x Delta %d SMPInH %d elaps = %d mS,ForcedSpeed = %x  %04d PLLspeed = %x %01d %07d s=%d \n",MAX_VOL,inputSpeed,(TIMER_CLOCK_FREQ*(float)outDmaSpeedScaled)/TIME_SCALE_FACT,outDmaSpeedScaled,appDistErr,samplesInBuffH,elapsed_time_ticks,sForcedSpeed,AUDIO_PeriodicTC_FS_Counter,readSpeedXScaled,HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin),TIM2->CNT,UsbSamplesAvail);
 
-	  }
+  }
 #if   NUMBER_OF_LCD > 0
 	  if(HAL_GPIO_ReadPin(KEY_GPIO_Port,KEY_Pin)==0 )
 	  {
@@ -2109,6 +1971,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  /* DMA1_Stream5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
   /* DMA2_Stream1_IRQn interrupt configuration */
   NVIC_SetPriority(DMA2_Stream1_IRQn, NVIC_EncodePriority(NVIC_GetPriorityGrouping(),0, 0));
   NVIC_EnableIRQ(DMA2_Stream1_IRQn);
